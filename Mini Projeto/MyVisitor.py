@@ -2,6 +2,7 @@ from CymbolVisitor import CymbolVisitor
 from CymbolParser import CymbolParser
 
 class MyVisitor(CymbolVisitor):
+   
    def __init__(self):
       self.var_valores = {}
       ##dicionario com valores das variaveis "fixas" locais
@@ -12,7 +13,7 @@ class MyVisitor(CymbolVisitor):
       ##globais
       self.var_temp_correspondecia = {}
       ##dicionario de correspondencia entra variaveis temporarias
-      ##(e.g.,%temp1, %temp2), e variaveis "fixas", isto eh, com 
+      ##(e.g.,%1, %2), e variaveis "fixas", isto eh, com 
       ##nome (e.g., %x, %y)
       self.apelidos = {}
       ##usado para correspondencia de parametros da declaracao 
@@ -32,6 +33,7 @@ class MyVisitor(CymbolVisitor):
       ##preciso fazer uma subtracao de zero por esta expressao
       self.retornei = 0
       ##usado para caso de funcao ter ou nao retorno
+      self.ass_vdl = 0
    
    def visitFuncDecl(self, ctx):
       print('define i32 @' + ctx.ID().getText(), end = '(') 
@@ -39,6 +41,11 @@ class MyVisitor(CymbolVisitor):
       try:
          ctx.paramTypeList().getText()
       except:
+         self.temp_atual += 1
+         print(') #0 {')
+         print('   %' + str(self.temp_atual) + ' = alloca i32, align 4')
+         print('   store i32 0, i32* %' + str(self.temp_atual) + ', align 4')
+         self.temp_atual += 1
          pass
       else:
          lista_parametros = ctx.paramTypeList().getText().split(',')
@@ -48,19 +55,21 @@ class MyVisitor(CymbolVisitor):
             print('i32, ', end = '')
             tamanho -= 1
       
-      if len(lista_parametros) >= 1:
-         print('i32', end = '')
-         print(') #0 {')
-         self.temp_atual = len(lista_parametros) + 1
+         if len(lista_parametros) >= 1:
+            print('i32', end = '')
+            print(') #0 {')
+            self.temp_atual = len(lista_parametros) + 1
 
-         for parametro in lista_parametros:
-            print('   %temp' + str(self.temp_atual) + ' = alloca i32, align 4')
-            print('   store i32 %' + parametro[3:] + ', i32* %temp' + str(self.temp_atual) + ', align 4')
-            self.apelidos[parametro[3:]] = '%temp' + str(self.temp_atual)
-            self.var_valores[parametro[3:]] = 0
-            self.temp_atual += 1
-      else:
-         print(') #0 {')
+            j = 0
+            for parametro in lista_parametros:
+               print('   %' + str(self.temp_atual) + ' = alloca i32, align 4')
+               print('   store i32 %' + str(j) + ', i32* %' + str(self.temp_atual) + ', align 4')
+               self.apelidos[parametro[3:]] = str(self.temp_atual)
+               self.var_valores[parametro[3:]] = 5
+               self.temp_atual += 1
+               j += 1
+         else:
+            print(') #0 {')
       
       self.dentro_funcao = 1
       self.visit(ctx.block())
@@ -84,7 +93,7 @@ class MyVisitor(CymbolVisitor):
       try:
          ctx.exprList().getText()
       except:
-         print('   %temp' + str(self.temp_atual) + ' = call i32 @' + ctx.ID().getText() + '()')
+         print('   %' + str(self.temp_atual) + ' = call i32 @' + ctx.ID().getText() + '()')
          if ctx.ID().getText() in self.var_temp_correspondecia:
                self.ids_iguais[ctx.ID().getText()] = (self.var_temp_correspondecia[ctx.ID().getText()], self.temp_atual)
          self.var_temp_correspondecia[ctx.ID().getText()] = self.temp_atual
@@ -97,20 +106,21 @@ class MyVisitor(CymbolVisitor):
             except:
                break
             else:
-               if self.entrou_id == 1:
-                  fun_list.append('%temp' + str(self.temp_atual - 1))
-                  self.entrou_id = 0
+               if self.temp_sinal == 1:
+                  fun_list.append('%' + str(self.temp_atual - 1))
+                  self.temp_sinal = 0
                else:
                   fun_list.append(str(x))
                i += 1
          
-         print('   %temp' + str(self.temp_atual) + ' = call i32 @' + ctx.ID().getText() + '(', end = '')
+         print('   %' + str(self.temp_atual) + ' = call i32 @' + ctx.ID().getText() + '(', end = '')
          if ctx.ID().getText() in self.var_temp_correspondecia:
                self.ids_iguais[ctx.ID().getText()] = (self.var_temp_correspondecia[ctx.ID().getText()], self.temp_atual)
          self.var_temp_correspondecia[ctx.ID().getText()] = self.temp_atual
          self.temp_atual += 1
 
          tamanho = len(fun_list)
+         #print(fun_list)
          j = 0
 
          while j < (tamanho - 1):
@@ -118,6 +128,7 @@ class MyVisitor(CymbolVisitor):
             j += 1
          print('i32 ' + fun_list[j] + ')')
 
+      self.temp_sinal = 1
       self.chamada_funcao = 1
       self.entrou_id = 0
 
@@ -129,7 +140,7 @@ class MyVisitor(CymbolVisitor):
          try:
             ctx.expr().getText()
          except:
-            self.var_valores_global[ctx.ID().getText()] = 0
+            self.var_valores_global[ctx.ID().getText()] = 5
             print('@' + ctx.ID().getText() + ' = global i32 ' + str(self.var_valores_global[ctx.ID().getText()]) + ', align 4')
          else:
             self.var_valores_global[ctx.ID().getText()], x = self.visit(ctx.expr())
@@ -140,35 +151,38 @@ class MyVisitor(CymbolVisitor):
          try:
             ctx.expr().getText()
          except:
-            self.var_valores[ctx.ID().getText()] = 0
+            self.var_valores[ctx.ID().getText()] = 5
          else:
             self.var_valores[ctx.ID().getText()], x = self.visit(ctx.expr())
 
             if self.entrou_id == 1:
                ##se entrou_id == 1, entao tem id na expr, e foi necessario usar variaveis temporarias
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
                self.entrou_id = 0
             elif self.entrou_id == 0 and self.chamada_funcao == 1:
                ##se nao, chamada de funcao na expr
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
                self.chamada_funcao = 0
             else:
                ##se nao, soh constantes na expr   
                print('   store i32 ' + str(self.var_valores[ctx.ID().getText()]) + ', i32* %' + ctx.ID().getText() + ', align 4')
 
       self.temp_sinal = 0
+      self.ass_vdl = 1
 
    def visitReturnStat(self, ctx):
+      self.temp_sinal = 0;
+      self.chamada_funcao = 0;
       x, y = self.visit(ctx.expr())
 
-      if self.entrou_id == 1:
+      if self.temp_sinal == 1:
          ##se entrou_id == 1, entao tem id na expr, e foi necessario usar variaveis temporarias
-         print('   ret i32 %temp' + str(self.temp_atual - 1))
+         print('   ret i32 %' + str(self.temp_atual - 1))
          self.retornei = 1
-         self.entrou_id = 0
-      elif self.entrou_id == 0 and self.chamada_funcao == 1:
+         self.temp_sinal = 0
+      elif self.temp_sinal == 0 and self.chamada_funcao == 1:
          ##chamada de funcao no retorno
-         print('   ret i32 %temp' + str(self.temp_atual - 1))
+         print('   ret i32 %' + str(self.temp_atual - 1))
          self.chamada_funcao = 0
          self.retornei = 1
       else:
@@ -190,11 +204,11 @@ class MyVisitor(CymbolVisitor):
             ##variavel local
             if self.entrou_id == 1:
                ##se entrou_id == 1, entao tem id na expr, e foi necessario usar variaveis temporarias
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
                self.entrou_id = 0
             elif self.entrou_id == 0 and self.chamada_funcao == 1:
                ##chamada de funcao
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
                self.chamada_funcao = 0
             else:
                ##soh constantes
@@ -203,11 +217,11 @@ class MyVisitor(CymbolVisitor):
             ##variavel global
             if self.entrou_id == 1:
                ##se entrou_id == 1, entao tem id na expr, e foi necessario usar variaveis temporarias
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* @' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* @' + ctx.ID().getText() + ', align 4')
                self.entrou_id = 0
             elif self.entrou_id == 0 and self.chamada_funcao == 1:
                ##chamada de funcao
-               print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* @' + ctx.ID().getText() + ', align 4')
+               print('   store i32 %' + str(self.temp_atual - 1) + ', i32* @' + ctx.ID().getText() + ', align 4')
                self.chamada_funcao = 0
             else:
                ##soh constantes
@@ -215,17 +229,18 @@ class MyVisitor(CymbolVisitor):
       else:   
          if self.entrou_id == 1:
             ##se entrou_id == 1, entao tem id na expr, e foi necessario usar variaveis temporarias
-            print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* ' + self.apelidos[ctx.ID().getText()] + ', align 4')
+            print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + self.apelidos[ctx.ID().getText()] + ', align 4')##mudei
             self.entrou_id = 0
          elif self.entrou_id == 0 and self.chamada_funcao == 1:
             ##chamada de funcao
-            print('   store i32 %temp' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
+            print('   store i32 %' + str(self.temp_atual - 1) + ', i32* %' + ctx.ID().getText() + ', align 4')
             self.chamada_funcao = 0
          else:
             ##se nao soh foi constantes na expr
-            print('   store i32 ' + str(self.var_valores[ctx.ID().getText()]) + ', i32* ' + self.apelidos[ctx.ID().getText()] + ', align 4')  
+            print('   store i32 ' + str(self.var_valores[ctx.ID().getText()]) + ', i32* %' + self.apelidos[ctx.ID().getText()] + ', align 4')  ##mudei
       
       self.temp_sinal = 0
+      self.ass_vdl = 1
 
    def visitMulDivExpr(self, ctx):
       left, temp_left = self.visit(ctx.expr(0))
@@ -251,13 +266,13 @@ class MyVisitor(CymbolVisitor):
                if (temp_left != -1) and (temp_right != -1):
                   ##ambas sao temporarias
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(temp_left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(temp_left) + ', %' + str(temp_right))
                      result = int(left) * int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(temp_left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(temp_left) + ', %' + str(temp_right))
                      result = int(left) / int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -265,13 +280,13 @@ class MyVisitor(CymbolVisitor):
                elif temp_left  != -1:
                   ##soh a esquerda eh temporaria
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(temp_left) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(temp_left) + ', ' + str(right))
                      result = int(left) * int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(temp_left) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(temp_left) + ', ' + str(right))
                      result = int(left) / int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -279,13 +294,13 @@ class MyVisitor(CymbolVisitor):
                elif temp_right  != -1:
                   ##soh a direira eh temporaria
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 ' + str(left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 ' + str(left) + ', %' + str(temp_right))
                      result = int(left) * int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 ' + str(left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 ' + str(left) + ', %' + str(temp_right))
                      result = int(left) / int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -303,13 +318,13 @@ class MyVisitor(CymbolVisitor):
                if temp_left  != -1:
                   ##a da esquerda eh temporaria
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(temp_left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(temp_left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) * int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(temp_left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(temp_left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) / int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -317,13 +332,13 @@ class MyVisitor(CymbolVisitor):
                else:
                   ##a da esquerda eh constante
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 ' + str(left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 ' + str(left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) * int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 ' + str(left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 ' + str(left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) / int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -339,13 +354,13 @@ class MyVisitor(CymbolVisitor):
                if temp_right != -1:
                   ##exp1 eh temporaria
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(temp_right))
                      result = int(left) * int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(temp_right))
                      result = int(left) / int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -353,13 +368,13 @@ class MyVisitor(CymbolVisitor):
                else:
                   ##exp1 eh constante
                   if ctx.op.type == CymbolParser.MUL:
-                     print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
                      result = int(left) * int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
                      result = int(left) / int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -368,13 +383,13 @@ class MyVisitor(CymbolVisitor):
                ##exp1 tem id! entao os dois tem id!
                ##nunca entra aqui
                if ctx.op.type == CymbolParser.MUL:
-                  print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                  print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                   result = int(left) * int(right)
                   temp = self.temp_atual;
                   self.temp_atual += 1
                   self.temp_sinal = 1
                else:
-                  print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                  print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                   result = int(left) / int(right)
                   temp = self.temp_atual;
                   self.temp_atual += 1
@@ -384,20 +399,20 @@ class MyVisitor(CymbolVisitor):
          ##ambos tem id
          if ctx.op.type == CymbolParser.MUL:
             if ctx.expr(0).ID().getText() == ctx.expr(1).ID().getText():
-               print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %temp' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
+               print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
                self.ids_iguais.pop(ctx.expr(0).ID().getText())
             else:
-               print('   %temp' + str(self.temp_atual) + ' = mul nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+               print('   %' + str(self.temp_atual) + ' = mul nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
             result = int(left) * int(right)
             temp = self.temp_atual;
             self.temp_atual += 1
             self.temp_sinal = 1
          else:
             if ctx.expr(0).ID().getText() == ctx.expr(1).ID().getText():
-               print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %temp' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
+               print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
                self.ids_iguais.pop(ctx.expr(0).ID().getText())
             else:
-               print('   %temp' + str(self.temp_atual) + ' = sdiv nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+               print('   %' + str(self.temp_atual) + ' = sdiv i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
             result = int(left) / int(right)
             temp = self.temp_atual;
             self.temp_atual += 1
@@ -429,13 +444,13 @@ class MyVisitor(CymbolVisitor):
                if (temp_left != -1) and (temp_right != -1):
                   ##ambas sao temporarias
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(temp_left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(temp_left) + ', %' + str(temp_right))
                      result = int(left) + int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(temp_left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(temp_left) + ', %' + str(temp_right))
                      result = int(left) - int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -443,13 +458,13 @@ class MyVisitor(CymbolVisitor):
                elif temp_left  != -1:
                   ##soh a esquerda eh temporaria
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(temp_left) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(temp_left) + ', ' + str(right))
                      result = int(left) + int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(temp_left) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(temp_left) + ', ' + str(right))
                      result = int(left) - int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -457,13 +472,13 @@ class MyVisitor(CymbolVisitor):
                elif temp_right  != -1:
                   ##soh a direira eh temporaria
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 ' + str(left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 ' + str(left) + ', %' + str(temp_right))
                      result = int(left) + int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 ' + str(left) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 ' + str(left) + ', %' + str(temp_right))
                      result = int(left) - int(right)
                      temp = self.temp_atual
                      self.temp_atual += 1
@@ -481,13 +496,13 @@ class MyVisitor(CymbolVisitor):
                if temp_left  != -1:
                   ##a da esquerda eh temporaria
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(temp_left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(temp_left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) + int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(temp_left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(temp_left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) - int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -495,13 +510,13 @@ class MyVisitor(CymbolVisitor):
                else:
                   ##a da esquerda eh constante
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 ' + str(left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 ' + str(left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) + int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 ' + str(left) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 ' + str(left) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                      result = int(left) - int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -517,13 +532,13 @@ class MyVisitor(CymbolVisitor):
                if temp_right != -1:
                   ##exp1 eh temporaria
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(temp_right))
                      result = int(left) + int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(temp_right))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(temp_right))
                      result = int(left) - int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -531,13 +546,13 @@ class MyVisitor(CymbolVisitor):
                else:
                   ##exp1 eh constante
                   if ctx.op.type == CymbolParser.PLUS:
-                     print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
                      result = int(left) + int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
                      self.temp_sinal = 1
                   else:
-                     print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
+                     print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', ' + str(right))
                      result = int(left) - int(right)
                      temp = self.temp_atual;
                      self.temp_atual += 1
@@ -547,13 +562,13 @@ class MyVisitor(CymbolVisitor):
                ##porem nunca entra aqui, pois se os dois tem id
                ##o primeiro try ja pega
                if ctx.op.type == CymbolParser.PLUS:
-                  print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                  print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                   result = int(left) + int(right)
                   temp = self.temp_atual;
                   self.temp_atual += 1
                   self.temp_sinal = 1
                else:
-                  print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+                  print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
                   result = int(left) - int(right)
                   temp = self.temp_atual;
                   self.temp_atual += 1
@@ -561,20 +576,20 @@ class MyVisitor(CymbolVisitor):
       else:
          if ctx.op.type == CymbolParser.PLUS:
             if ctx.expr(0).ID().getText() == ctx.expr(1).ID().getText():
-               print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %temp' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
+               print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
                self.ids_iguais.pop(ctx.expr(0).ID().getText())
             else:
-               print('   %temp' + str(self.temp_atual) + ' = add nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+               print('   %' + str(self.temp_atual) + ' = add nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
             result = int(left) + int(right)
             temp = self.temp_atual;
             self.temp_atual += 1
             self.temp_sinal = 1
          else:
             if ctx.expr(0).ID().getText() == ctx.expr(1).ID().getText():
-               print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %temp' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
+               print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(self.ids_iguais[ctx.expr(0).ID().getText()][0]) + ', %' + str(self.ids_iguais[ctx.expr(1).ID().getText()][1]))
                self.ids_iguais.pop(ctx.expr(0).ID().getText())
             else:
-               print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 %temp' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %temp' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
+               print('   %' + str(self.temp_atual) + ' = sub nsw i32 %' + str(self.var_temp_correspondecia[ctx.expr(0).ID().getText()]) + ', %' + str(self.var_temp_correspondecia[ctx.expr(1).ID().getText()]))
             result = int(left) - int(right)
             temp = self.temp_atual;
             self.temp_atual += 1
@@ -591,7 +606,7 @@ class MyVisitor(CymbolVisitor):
 
       if not(ctx.ID().getText() in self.apelidos):
          if ctx.ID().getText() in self.var_valores:
-            print('   %temp' + str(self.temp_atual) + ' = load i32, i32* %' + ctx.ID().getText() + ', align 4')
+            print('   %' + str(self.temp_atual) + ' = load i32, i32* %' + ctx.ID().getText() + ', align 4')
             if ctx.ID().getText() in self.var_temp_correspondecia:
                self.ids_iguais[ctx.ID().getText()] = (self.var_temp_correspondecia[ctx.ID().getText()], self.temp_atual)
             self.var_temp_correspondecia[ctx.ID().getText()] = self.temp_atual
@@ -599,13 +614,13 @@ class MyVisitor(CymbolVisitor):
             self.temp_sinal = 1
             return str(self.var_valores[ctx.ID().getText()]), -1
          else:
-            print('   %temp' + str(self.temp_atual) + ' = load i32, i32* @' + ctx.ID().getText() + ', align 4')
+            print('   %' + str(self.temp_atual) + ' = load i32, i32* @' + ctx.ID().getText() + ', align 4')
             self.var_temp_correspondecia[ctx.ID().getText()] = self.temp_atual
             self.temp_atual += 1
             self.temp_sinal = 1
             return str(self.var_valores_global[ctx.ID().getText()]), -1
       else:
-         print('   %temp' + str(self.temp_atual) + ' = load i32, i32* ' + self.apelidos[ctx.ID().getText()] + ', align 4')
+         print('   %' + str(self.temp_atual) + ' = load i32, i32* %' + self.apelidos[ctx.ID().getText()] + ', align 4')
          self.var_temp_correspondecia[ctx.ID().getText()] = self.temp_atual
          self.temp_atual += 1
          self.temp_sinal = 1
@@ -613,11 +628,22 @@ class MyVisitor(CymbolVisitor):
 
    def visitSignedExpr(self, ctx):
       x, y = self.visit(ctx.expr())
+
       if self.temp_sinal == 1:
          if ctx.op.type == CymbolParser.PLUS:
-            return x, y
+            self.temp_sinal = 0
+            return str(x), y
          else: 
-            print('   %temp' + str(self.temp_atual) + ' = sub nsw i32 0, %temp' + str(self.temp_atual - 1))
+            print('   %' + str(self.temp_atual) + ' = sub nsw i32 0, %' + str(self.temp_atual - 1))
+            self.temp_atual += 1
+            self.temp_sinal = 0
+            return '-' + str(x), y
+      else:
+         if ctx.op.type == CymbolParser.PLUS:
+            self.temp_sinal = 0
+            return str(x), y
+         else: 
+            self.temp_sinal = 0
             return '-' + str(x), y
 
    def visitParenExpr(self, ctx):

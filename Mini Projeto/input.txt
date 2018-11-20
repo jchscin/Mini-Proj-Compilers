@@ -1,8 +1,12 @@
+int h(int ret, int k){
+	int y = k;
+	int x = -2;
+	x = -y;
+	x = -y;
+	return ret;
+}
 int main(){
-   int y;
-   int z;
-   y = func(y,z) * func(y,z);
-   y = z + 2;
-   y = z + 3;
-   return 0;
+	int x = 2;
+	int y = 4;
+	return y;
 }

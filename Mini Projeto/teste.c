@@ -1,9 +1,12 @@
-int z;
-int x(int g, int h, int i){
-   return 0;
+int h(int ret, int k){
+	int y = k;
+	int x = -2;
+	x = -y;
+	x = -y;
+	return ret;
 }
 int main(){
-   int y;
-   z = x(2, y + 2, z) + x(2, y + 2, z);
-   return 0;
+	int x = 2;
+	int y = 4;
+	return 0;
 }
