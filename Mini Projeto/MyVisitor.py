@@ -33,7 +33,6 @@ class MyVisitor(CymbolVisitor):
       ##preciso fazer uma subtracao de zero por esta expressao
       self.retornei = 0
       ##usado para caso de funcao ter ou nao retorno
-      self.ass_vdl = 0
    
    def visitFuncDecl(self, ctx):
       print('define i32 @' + ctx.ID().getText(), end = '(') 
@@ -135,6 +134,8 @@ class MyVisitor(CymbolVisitor):
       return 0, 0
 
    def visitVarDecl(self, ctx):
+      self.entrou_id = 0
+      self.chamada_funcao = 0
 
       if self.dentro_funcao == 0:
          try:
@@ -168,7 +169,6 @@ class MyVisitor(CymbolVisitor):
                print('   store i32 ' + str(self.var_valores[ctx.ID().getText()]) + ', i32* %' + ctx.ID().getText() + ', align 4')
 
       self.temp_sinal = 0
-      self.ass_vdl = 1
 
    def visitReturnStat(self, ctx):
       self.temp_sinal = 0;
@@ -193,6 +193,9 @@ class MyVisitor(CymbolVisitor):
       self.temp_sinal = 0
 
    def visitAssignStat(self, ctx):
+      self.entrou_id = 0
+      self.chamada_funcao = 0
+
       if ctx.ID().getText() in self.var_valores:
          self.var_valores[ctx.ID().getText()], x = self.visit(ctx.expr())
       else:
@@ -240,7 +243,6 @@ class MyVisitor(CymbolVisitor):
             print('   store i32 ' + str(self.var_valores[ctx.ID().getText()]) + ', i32* %' + self.apelidos[ctx.ID().getText()] + ', align 4')  ##mudei
       
       self.temp_sinal = 0
-      self.ass_vdl = 1
 
    def visitMulDivExpr(self, ctx):
       left, temp_left = self.visit(ctx.expr(0))
@@ -605,6 +607,7 @@ class MyVisitor(CymbolVisitor):
       self.entrou_id = 1
 
       if not(ctx.ID().getText() in self.apelidos):
+         ##nao eh parametro de funcao
          if ctx.ID().getText() in self.var_valores:
             print('   %' + str(self.temp_atual) + ' = load i32, i32* %' + ctx.ID().getText() + ', align 4')
             if ctx.ID().getText() in self.var_temp_correspondecia:
@@ -627,6 +630,7 @@ class MyVisitor(CymbolVisitor):
          return str(self.var_valores[ctx.ID().getText()]), -1
 
    def visitSignedExpr(self, ctx):
+      self.temp_sinal = 0
       x, y = self.visit(ctx.expr())
 
       if self.temp_sinal == 1:
