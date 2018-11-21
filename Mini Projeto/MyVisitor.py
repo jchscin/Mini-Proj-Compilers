@@ -40,11 +40,14 @@ class MyVisitor(CymbolVisitor):
       try:
          ctx.paramTypeList().getText()
       except:
-         self.temp_atual += 1
-         print(') #0 {')
-         print('   %' + str(self.temp_atual) + ' = alloca i32, align 4')
-         print('   store i32 0, i32* %' + str(self.temp_atual) + ', align 4')
-         self.temp_atual += 1
+         if ctx.ID().getText() != 'main':
+            print(') #0 {')
+         else:
+            self.temp_atual += 1
+            print(') #0 {')
+            print('   %' + str(self.temp_atual) + ' = alloca i32, align 4')
+            print('   store i32 0, i32* %' + str(self.temp_atual) + ', align 4')
+            self.temp_atual += 1
          pass
       else:
          lista_parametros = ctx.paramTypeList().getText().split(',')
@@ -397,7 +400,6 @@ class MyVisitor(CymbolVisitor):
                   self.temp_atual += 1
                   self.temp_sinal = 1
       else:
-         self.teste = 1
          ##ambos tem id
          if ctx.op.type == CymbolParser.MUL:
             if ctx.expr(0).ID().getText() == ctx.expr(1).ID().getText():
