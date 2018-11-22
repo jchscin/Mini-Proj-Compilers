@@ -104,6 +104,7 @@ class MyVisitor(CymbolVisitor):
          i = 0
          while 1:
             try:
+               self.temp_sinal = 0
                x, y = self.visit(ctx.exprList().expr(i))
             except:
                break
