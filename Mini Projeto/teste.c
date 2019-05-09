@@ -1,4 +1,4 @@
-int h(int ret, int k){
+int g(int ret, int k){
 	int y = k;
 	int x = -2;
 	x = -y;
